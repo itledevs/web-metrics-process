@@ -1,4 +1,4 @@
-__version__ = "2026.5.1"
+__version__ = "2026.5.2"
 
 from multiprocessing import Process, Manager
 from fastapi import FastAPI
@@ -37,10 +37,22 @@ class WebMetrics:
         self.data['version'] = None
         self.data['session_id'] = get_random_str(generated_len=8)
 
-    def start(self):
+    def start(self, daemon=True):
         #(!) designed and valid only for linux. macOS multiprocessing is with issues, uses spawn method (forced fork got issues with uvicorn)
-        self.process = Process(target=web_process, kwargs={ 'metrics_data': self.data, 'interface': self.interface, 'port': self.port, 'web_path': self.web_path }, daemon=True)
+        self.process = Process(target=web_process, kwargs={ 'metrics_data': self.data, 'interface': self.interface, 'port': self.port, 'web_path': self.web_path }, daemon=daemon)
         self.process.start()
+    
+    def stop(self):
+        if self.process:
+            self.process.terminate()
+    
+    def __del__(self):
+        if self.process:
+            self.stop()
+
+    def update_time_alive(self):
+        self.data['time_alive_last'] = f'{datetime.now()}'
+
 
 
 ## Example of usage in code:
