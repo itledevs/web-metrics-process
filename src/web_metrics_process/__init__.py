@@ -1,4 +1,4 @@
-__version__ = "2026.5.2"
+__version__ = "2026.5.3"
 
 from multiprocessing import Process, Manager
 from fastapi import FastAPI
@@ -14,44 +14,63 @@ def get_random_str(generated_len=6):
     return ''.join(random.choice(password_characters) for i in range(generated_len))
 
 
-def web_process(metrics_data, interface='127.0.0.1', port=8001, web_path='/metrics'):
+def web_process(metrics_data, interface='127.0.0.1', port=8001, web_path='/metrics', callback_function=None):
     app = FastAPI()
     @app.get(web_path)
     def metrics():
+        if callback_function:
+            # recalculate some metrics on request time ( for example if main process is busy too long or hanged and there are no updates of time_alive_last )
+            callback_function()
         return metrics_data
     uvicorn.run(app, host=interface, port=port)
 
 
 class WebMetrics:
-    def __init__(self, interface='127.0.0.1', port=8001, web_path='/metrics'):
+    def __init__(self, interface='127.0.0.1', port=8001, web_path='/metrics', time_alive_interval_max: int=0):
         self.interface = interface
         self.port = port
         self.web_path = web_path
         self.process = None
+        self.time_alive_interval_max = int(time_alive_interval_max)
 
-        self.data = Manager().dict() 
-        self.data['time_started'] = f'{datetime.now()}'
-        self.data['time_alive_last'] = None
+        self.data = Manager().dict()
+        self.data['time_started'] = datetime.now()
+        self.data['time_alive_last'] = datetime.now()
+        self.data['time_alive_interval_max'] = self.time_alive_interval_max
+        self.data['time_alive_ok'] = None
         self.data['iteration'] = 0
         self.data['name'] = None
         self.data['version'] = None
         self.data['session_id'] = get_random_str(generated_len=8)
 
     def start(self, daemon=True):
+        callback_function = self.update_time_alive_ok if self.time_alive_interval_max > 0 else None
         #(!) designed and valid only for linux. macOS multiprocessing is with issues, uses spawn method (forced fork got issues with uvicorn)
-        self.process = Process(target=web_process, kwargs={ 'metrics_data': self.data, 'interface': self.interface, 'port': self.port, 'web_path': self.web_path }, daemon=daemon)
+        self.process = Process(target=web_process, kwargs={ 'metrics_data': self.data, 'interface': self.interface, 'port': self.port, 'web_path': self.web_path, 'callback_function': callback_function }, daemon=daemon)
         self.process.start()
-    
+
     def stop(self):
         if self.process:
             self.process.terminate()
-    
+
     def __del__(self):
         if self.process:
             self.stop()
 
     def update_time_alive(self):
-        self.data['time_alive_last'] = f'{datetime.now()}'
+        self.data['time_alive_last'] = datetime.now()
+
+    def update_time_alive_ok(self):
+        if not self.time_alive_interval_max:
+            return
+
+        time_interval = (datetime.now() - self.data['time_alive_last']).seconds
+
+        if time_interval > self.time_alive_interval_max:
+            self.data['time_alive_ok'] = False
+        else:
+            self.data['time_alive_ok'] = True
+
 
 
 
@@ -61,4 +80,4 @@ class WebMetrics:
 # web_metrics.start()
 
 ## This will be available at http://<interface>:<port>/<web_path> in JSON format, default: http://127.0.0.1:8001/metrics
-# web_metrics.data['somekey'] = 'somevalue'    
+# web_metrics.data['somekey'] = 'somevalue'
