@@ -1,4 +1,4 @@
-__version__ = "2026.5.3"
+__version__ = "2026.5.4"
 
 from multiprocessing import Process, Manager
 from fastapi import FastAPI
@@ -67,9 +67,9 @@ class WebMetrics:
         time_interval = (datetime.now() - self.data['time_alive_last']).seconds
 
         if time_interval > self.time_alive_interval_max:
-            self.data['time_alive_ok'] = False
+            self.data['time_alive_ok'] = 0
         else:
-            self.data['time_alive_ok'] = True
+            self.data['time_alive_ok'] = 1
 
 
 
